@@ -111,7 +111,7 @@ function save(point: WeightPoint) {
       </li>
     </ul>
     <Button type="button" class="h-11 w-full hover:bg-primary-hover" @click="create">{{ t('weight.add') }}</Button>
-    <ResponsivePanel v-model:open="open" :title="editing?.id ? t('weight.edit') : t('weight.add')" :description="t('demo.savedBody')">
+    <ResponsivePanel v-model:open="open" :title="editing?.id ? t('weight.edit') : t('weight.add')" :description="t('weight.formBody')">
       <WeightForm v-if="editing" :point="editing" @save="save" @cancel="open = false" />
     </ResponsivePanel>
     <ConfirmDialog v-model:open="deleteOpen" :title="t('weight.deleteTitle')" :description="t('weight.deleteBody')" :confirm-label="t('common.delete')" @confirm="deleting && app.deleteWeight(deleting.id)" />

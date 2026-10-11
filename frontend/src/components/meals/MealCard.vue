@@ -4,7 +4,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Card, CardContent } from '@/components/ui/card'
 import { useI18n } from '@/composables/useI18n'
 import { formatKcal, localizedName } from '@/lib/format'
-import { mealCalories } from '@/fixtures/demo'
+import { mealCalories } from '@/lib/meals'
 import { useAppStore } from '@/stores/app'
 import type { Meal } from '@/types/domain'
 

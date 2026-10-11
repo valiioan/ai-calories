@@ -40,7 +40,7 @@ Datele de jurnal aparțin unui singur `user_id`.
 
 ## Modele
 
-Unități canonice: energie în kcal, masă în grame, greutate corporală în kilograme, timp stocat în UTC. `profiles.timezone` este doar pentru afișare. Snapshot-urile nutriționale de pe `meal_items` nu se recalculează când cache-ul USDA se actualizează.
+Unități canonice: energie în kcal, masă în grame, greutate corporală în kilograme, timp stocat în UTC. `profiles.timezone` (implicit `Europe/Bucharest`) stabilește limitele zilei pentru „azi”, „ieri” și filtrele de jurnal. Snapshot-urile nutriționale de pe `meal_items` nu se recalculează când cache-ul USDA se actualizează. `energy_out_kcal` este suma activităților înregistrate, nu o estimare de întreținere.
 
 ### users
 
@@ -62,7 +62,8 @@ Un rând per utilizator.
 | protein_target_g | decimal(6,1), null | |
 | carbohydrate_target_g | decimal(6,1), null | |
 | fat_target_g | decimal(6,1), null | |
-| timezone | string | implicit `Europe/Bucharest` |
+| target_weight_kg | decimal(5,2), null | obiectivul afișat în profil |
+| timezone | string | implicit `Europe/Bucharest`; definește ziua locală |
 
 ### user_settings
 
@@ -117,6 +118,8 @@ Cache USDA, fără `user_id`. Valorile macro sunt per 100 g.
 | eaten_at | datetime | UTC |
 | meal_type | enum | `breakfast`, `lunch`, `dinner`, `snack` |
 | note | string, null | |
+| original_text | text, null | textul utilizatorului |
+| assumptions | text, null | ipotezele estimării |
 
 ### meal_items
 
@@ -145,6 +148,8 @@ Calorii OUT.
 | name | string | |
 | duration_minutes | unsigned int, null | |
 | energy_kcal | decimal(8,2) | |
+| intensity | enum, null | `low`, `moderate`, `high` |
+| note | string, null | |
 | source | enum | `manual`, `estimated` |
 
 ### conversations, messages, agent_actions
@@ -172,18 +177,15 @@ Modelul poate cere doar aceste funcții. Fiecare primește utilizatorul din sesi
 
 | Unealtă | Argumente | Efect |
 | --- | --- | --- |
-| `search_foods` | `query`, `page` opțional | caută USDA, scrie cache, întoarce lista |
-| `get_food` | `food_id` | citește cache-ul local sau USDA |
-| `log_meal` | `eaten_at`, `meal_type`, `note`, `items[]` | creează masa și itemii, cu snapshot |
-| `update_meal` | `meal_id`, câmpuri parțiale | doar masa proprietarului |
-| `delete_meal` | `meal_id` | doar masa proprietarului |
-| `log_weight` | `recorded_on`, `weight_kg`, `note` | upsert pe ziua respectivă |
-| `log_activity` | `performed_at`, `name`, `duration_minutes`, `energy_kcal` | inserează calorii OUT |
-| `get_day` | `date` | țintă, IN, OUT, net, greutate |
-| `get_range` | `from`, `to` | același rezumat pe interval |
-| `update_profile` | câmpurile din `profiles` | actualizează profilul sesiunii |
+| `search_food` | `query`, `page` | caută USDA, scrie cache, întoarce lista. Interogarea este în engleză |
+| `preview_meal` | data locală, ora, tipul, itemii, textul original | creează o propunere, fără masă în jurnal |
+| `preview_update` | `meal_id` și câmpurile noi | propunere de modificare pentru masa proprietarului |
+| `preview_delete` | `meal_id` | propunere de ștergere; masa rămâne până la confirmare |
+| `preview_activity` | data, numele, durata, caloriile | propunere de activitate |
+| `preview_weight` | data, kilogramele | propunere de greutate |
+| `get_report` | `date` sau `from`/`to` | citește istoricul sesiunii |
 
-Un nume de unealtă necunoscut este respins și scris în `agent_actions` cu status `rejected`. Nu se adaugă unelte generice de bază de date.
+Modelul nu salvează, nu modifică și nu șterge. Serverul execută scrierea când utilizatorul apasă Confirmă sau trimite o confirmare scurtă (`da`, `confirmă`, `salvează`) pentru o propunere deja în așteptare. Aceeași tură nu poate și propune, și confirma. `save_meal`, `update_meal` și `delete_meal` nu sunt unelte ale modelului; un nume din afara allowlist-ului este respins și scris în `agent_actions` cu status `rejected`. Nu se adaugă unelte generice de bază de date.
 
 ## Contract API
 
@@ -349,14 +351,16 @@ POST /api/conversations/{conversation}/messages    { content }
 ```json
 {
   "user_message": { "id": 1, "role": "user", "content": "Am mâncat un iaurt la micul dejun" },
-  "assistant_message": { "id": 2, "role": "assistant", "content": "Am înregistrat micul dejun." },
+  "assistant_message": { "id": 2, "role": "assistant", "content": "Am pregătit estimarea." },
+  "proposal": { "id": 4, "kind": "meal", "status": "pending" },
   "actions": [
-    { "tool_name": "log_meal", "status": "succeeded" }
-  ]
+    { "tool_name": "preview_meal", "status": "succeeded" }
+  ],
+  "retry": false
 }
 ```
 
-Răspunsul de chat nu include argumentele brute dacă ele conțin date ale altui utilizator. Acțiunile executate sunt deja filtrate pe sesiune.
+Propunerea nu scrie în jurnal. `POST /api/proposals/{proposal}/confirm` o salvează și întoarce `revision_id`. `POST /api/journal-revisions/{revision}/undo` anulează ultima modificare a acelei înregistrări. O zi fără date răspunde cu zerouri, nu cu 404. `energy_out_kcal` este suma activităților înregistrate.
 
 ## Frontend
 

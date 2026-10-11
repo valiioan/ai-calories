@@ -20,6 +20,8 @@ export type FoodItem = {
   protein: number | null
   carbs: number | null
   fat: number | null
+  foodId?: number | null
+  source?: 'usda' | 'manual'
 }
 
 export type Meal = {
@@ -84,9 +86,9 @@ export type MealProposal = {
   status: 'pending' | 'confirmed' | 'cancelled'
   corrected: boolean
   meal: Meal
-  assumptionsKey: 'chat.assumptionPrep' | 'chat.assumptionPortion'
-  uncertaintyKey: 'chat.uncertaintyPortion' | null
-  sourcesKey: 'chat.sourceValue'
+  assumptions: string | null
+  uncertainty: string | null
+  source: string
 }
 
 export type WeightProposal = {
@@ -123,6 +125,7 @@ export type ChatMessage = {
   at: string
   proposal?: Proposal
   retryText?: string
+  revisionId?: string
 }
 
 export type DemoUser = {
@@ -131,16 +134,3 @@ export type DemoUser = {
   firstName: string
   lastName: string
 }
-
-export type ExampleKind =
-  | 'empty'
-  | 'processing'
-  | 'meal'
-  | 'saved'
-  | 'corrected'
-  | 'delete'
-  | 'weight'
-  | 'activity'
-  | 'ambiguous'
-  | 'missing'
-  | 'down'

@@ -1,22 +1,36 @@
 import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { toast } from 'vue-sonner'
-import { buildBaselines, initialActivities, initialMeals, initialWeights, mealCalories } from '@/fixtures/demo'
 import { ApiError, apiJson, ensureCsrf } from '@/lib/api'
-import { interpret, YESTERDAY } from '@/fixtures/interpret'
+import { addDays, todayIn } from '@/lib/dates'
+import {
+  activityPayload,
+  emptyDay,
+  mealPayload,
+  proposalPatch,
+  toActivity,
+  toBaseline,
+  toChatMessage,
+  toMeal,
+  toProposal,
+  toWeight,
+  unwrap,
+  type ApiActivity,
+  type ApiMeal,
+  type ApiMessage,
+  type ApiProposal,
+  type ApiSummary,
+  type ApiWeight,
+} from '@/lib/journal'
 import { translate } from '@/i18n'
-import { addDays, TODAY } from '@/lib/dates'
-import { formatKcal, formatLongDate, localizedName } from '@/lib/format'
-import { delay, uid } from '@/lib/id'
+import { uid } from '@/lib/id'
 import type {
   Activity,
   ActivityLevel,
-  ActivityProposal,
   Appearance,
   ChatMessage,
   DayBaseline,
   DemoUser,
-  ExampleKind,
   Goal,
   Locale,
   Meal,
@@ -31,8 +45,8 @@ import type {
   WeightRange,
 } from '@/types/domain'
 
-const STORAGE_KEY = 'calorai-demo-v1'
 const ONBOARDING_KEY = 'calorai-onboarding-pending'
+const EARLIEST = '2000-01-01'
 
 type AccountUser = {
   id: number
@@ -47,6 +61,7 @@ type ProfilePayload = {
   activity_level: ActivityLevel | null
   goal: Goal
   calorie_target: number | null
+  target_weight_kg: number | null
   timezone: string
 }
 
@@ -59,25 +74,15 @@ type SettingsPayload = {
   notify_weekly: boolean
 }
 
-type Persisted = {
-  version: 1
-  user: DemoUser | null
-  onboarded: boolean
-  locale: Locale
-  appearance: Appearance
-  selectedDate: string
-  meals: Record<string, Meal[]>
-  activities: Activity[]
-  weights: WeightPoint[]
-  messages: ChatMessage[]
-  profile: Profile
-  notifications: Notifications
-  aiDockOpen: boolean
-  navCollapsed: boolean
-  period: Period
-  customFrom: string
-  customTo: string
-  weightRange: WeightRange
+type ChatReply = {
+  user_message: ApiMessage
+  assistant_message: ApiMessage
+  proposal: ApiProposal | null
+  retry: boolean
+}
+
+function persistedId(id: string): string | null {
+  return /^\d+$/.test(id) ? id : null
 }
 
 function emptyProfile(): Profile {
@@ -87,8 +92,8 @@ function emptyProfile(): Profile {
     email: '',
     dob: '',
     heightCm: null,
-    weightKg: 84.6,
-    targetWeightKg: 80,
+    weightKg: 0,
+    targetWeightKg: null,
     activityLevel: 'light',
     goal: 'maintain',
     calorieTarget: null,
@@ -103,12 +108,14 @@ export const useAppStore = defineStore('app', () => {
   const onboarded = ref(false)
   const locale = ref<Locale>('ro')
   const appearance = ref<Appearance>('light')
-  const selectedDate = ref(TODAY)
+  const selectedDate = ref(todayIn())
   const viewStatus = ref<ViewStatus>('ready')
-  const meals = ref<Record<string, Meal[]>>(initialMeals())
-  const activities = ref<Activity[]>(initialActivities())
-  const weights = ref<WeightPoint[]>(initialWeights())
+  const meals = ref<Record<string, Meal[]>>({})
+  const activities = ref<Activity[]>([])
+  const weights = ref<WeightPoint[]>([])
+  const summaries = ref<Record<string, DayBaseline>>({})
   const messages = ref<ChatMessage[]>([])
+  const conversationId = ref<number | null>(null)
   const chatThinking = ref(false)
   const profile = ref<Profile>(emptyProfile())
   const notifications = ref<Notifications>({ meals: true, weight: false, weekly: true })
@@ -116,12 +123,15 @@ export const useAppStore = defineStore('app', () => {
   const navCollapsed = ref(false)
   const composerFocused = ref(false)
   const period = ref<Period>('7')
-  const customFrom = ref(addDays(TODAY, -6))
-  const customTo = ref(TODAY)
+  const customFrom = ref(addDays(selectedDate.value, -6))
+  const customTo = ref(selectedDate.value)
   const weightRange = ref<WeightRange>('30d')
-  const baselines: Record<string, DayBaseline> = buildBaselines()
-  let unavailablePending = false
+  const earliest = EARLIEST
+  let journalBooted = false
   let dateToken = 0
+  let settingsToken = 0
+
+  const today = computed(() => todayIn(profile.value.timezone || 'Europe/Bucharest'))
 
   function applyChrome() {
     const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches
@@ -130,99 +140,24 @@ export const useAppStore = defineStore('app', () => {
     document.documentElement.lang = locale.value === 'en' ? 'en' : 'ro'
   }
 
-  function snapshot(): Persisted {
-    return {
-      version: 1,
-      user: null,
-      onboarded: false,
-      locale: locale.value,
-      appearance: appearance.value,
-      selectedDate: selectedDate.value,
-      meals: meals.value,
-      activities: activities.value,
-      weights: weights.value,
-      messages: messages.value,
-      profile: profile.value,
-      notifications: notifications.value,
-      aiDockOpen: aiDockOpen.value,
-      navCollapsed: navCollapsed.value,
-      period: period.value,
-      customFrom: customFrom.value,
-      customTo: customTo.value,
-      weightRange: weightRange.value,
-    }
-  }
-
-  function hydrate() {
-    const raw = sessionStorage.getItem(STORAGE_KEY)
-    if (!raw) return
-    try {
-      const data = JSON.parse(raw) as Persisted
-      if (data.version !== 1) return
-      locale.value = data.locale
-      appearance.value = data.appearance
-      selectedDate.value = data.selectedDate
-      meals.value = data.meals
-      activities.value = data.activities
-      weights.value = data.weights
-      messages.value = data.messages
-      profile.value = { ...emptyProfile(), ...data.profile, firstName: '', lastName: '', email: '' }
-      notifications.value = data.notifications
-      aiDockOpen.value = data.aiDockOpen
-      navCollapsed.value = data.navCollapsed
-      period.value = data.period
-      customFrom.value = data.customFrom
-      customTo.value = data.customTo
-      weightRange.value = data.weightRange
-    } catch {
-      sessionStorage.removeItem(STORAGE_KEY)
-    }
-  }
-
-  hydrate()
   applyChrome()
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyChrome)
-
   watch([appearance, locale], applyChrome)
-  watch(
-    [user, onboarded, locale, appearance, selectedDate, meals, activities, weights, messages, profile, notifications, aiDockOpen, navCollapsed, period, customFrom, customTo, weightRange],
-    () => sessionStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot())),
-    { deep: true },
-  )
 
   function t(key: Parameters<typeof translate>[1], params?: Record<string, string | number>) {
     return translate(locale.value, key, params)
   }
 
-  function notifyDemo() {
-    toast.success(t('demo.savedTitle'), { description: t('demo.savedBody') })
+  function notifySaved() {
+    toast.success(t('account.savedTitle'), { description: t('account.savedBody') })
   }
-
-  const earliest = addDays(TODAY, -364)
 
   function mealsOn(date: string): Meal[] {
     return meals.value[date] ?? []
   }
 
-  function nutrition(date: string) {
-    const dayMeals = meals.value[date]
-    const base = baselines[date]
-    const expenditure = base?.expenditure ?? 2400
-    if (dayMeals) {
-      const foods = dayMeals.flatMap((meal) => meal.items)
-      return {
-        intake: foods.reduce((sum, food) => sum + food.calories, 0),
-        expenditure,
-        protein: foods.reduce((sum, food) => sum + (food.protein ?? 0), 0),
-        carbs: foods.reduce((sum, food) => sum + (food.carbs ?? 0), 0),
-        fat: foods.reduce((sum, food) => sum + (food.fat ?? 0), 0),
-        logged: dayMeals.length > 0,
-      }
-    }
-    if (!base || date > TODAY || date < earliest) {
-      return { intake: 0, expenditure: 0, protein: 0, carbs: 0, fat: 0, logged: false }
-    }
-    return base
+  function nutrition(date: string): DayBaseline {
+    return summaries.value[date] ?? emptyDay()
   }
 
   const todayNutrition = computed(() => nutrition(selectedDate.value))
@@ -232,37 +167,58 @@ export const useAppStore = defineStore('app', () => {
   const latestWeight = computed(() =>
     [...weights.value].sort((a, b) => (a.date < b.date ? 1 : -1))[0] ?? null,
   )
+  const pendingMeals = computed(() =>
+    messages.value
+      .map((message) => message.proposal)
+      .filter((proposal): proposal is MealProposal => proposal?.kind === 'meal' && proposal.status === 'pending'),
+  )
 
-  async function setDate(iso: string) {
-    if (iso > TODAY || iso < earliest) return
-    selectedDate.value = iso
-    const token = ++dateToken
-    viewStatus.value = 'loading'
-    await delay(350)
-    if (token !== dateToken) return
-    viewStatus.value = 'ready'
+  function visibleWindow() {
+    const current = today.value
+    const reportFrom = period.value === 'custom' ? customFrom.value : addDays(current, -(Number(period.value) - 1))
+    const weightDays = weightRange.value === '7d' ? 7 : weightRange.value === '90d' ? 90 : weightRange.value === '1y' ? 365 : 30
+    const from = [addDays(selectedDate.value, -6), reportFrom, addDays(current, -(weightDays - 1)), selectedDate.value]
+      .reduce((left, right) => (left < right ? left : right))
+    const to = [selectedDate.value, current, customTo.value].reduce((left, right) => (left > right ? left : right))
+    return { from: from < earliest ? earliest : from, to: to > current ? current : to }
   }
 
-  function showError() {
-    viewStatus.value = 'error'
+  async function refreshJournal() {
+    if (!user.value) return
+    const token = ++dateToken
+    viewStatus.value = 'loading'
+    try {
+      const window = visibleWindow()
+      const [mealRows, activityRows, weightRows, summaryRows] = await Promise.all([
+        apiJson<ApiMeal[]>(`/api/meals?date=${selectedDate.value}`),
+        apiJson<ApiActivity[]>(`/api/activities?from=${window.from}&to=${window.to}`),
+        apiJson<ApiWeight[]>(`/api/weights?from=${window.from}&to=${window.to}`),
+        apiJson<{ data: ApiSummary[] }>(`/api/summary?from=${window.from}&to=${window.to}`),
+      ])
+      if (token !== dateToken) return
+      const dayMeals = unwrap(mealRows).map(toMeal)
+      meals.value = { [selectedDate.value]: dayMeals }
+      activities.value = unwrap(activityRows).map(toActivity)
+      weights.value = unwrap(weightRows).map(toWeight)
+      const next: Record<string, DayBaseline> = {}
+      for (const row of summaryRows.data) next[row.date] = toBaseline(row)
+      summaries.value = next
+      profile.value = { ...profile.value, weightKg: latestWeight.value?.kg ?? 0 }
+      viewStatus.value = 'ready'
+    } catch {
+      if (token !== dateToken) return
+      viewStatus.value = 'error'
+    }
+  }
+
+  async function setDate(iso: string) {
+    if (iso > today.value || iso < earliest) return
+    selectedDate.value = iso
+    await refreshJournal()
   }
 
   async function retryView() {
-    const token = ++dateToken
-    viewStatus.value = 'loading'
-    await delay(500)
-    if (token !== dateToken) return
-    viewStatus.value = 'ready'
-  }
-
-  function loadDemoJournal() {
-    meals.value = initialMeals()
-    activities.value = initialActivities()
-    weights.value = initialWeights()
-  }
-
-  function notifySaved() {
-    toast.success(t('account.savedTitle'), { description: t('account.savedBody') })
+    await refreshJournal()
   }
 
   function applySettings(settings: SettingsPayload) {
@@ -283,7 +239,6 @@ export const useAppStore = defineStore('app', () => {
       lastName: account.last_name,
       email: account.email,
     }
-    const activity = payload.activity_level ?? profile.value.activityLevel
     profile.value = {
       ...profile.value,
       firstName: account.first_name,
@@ -291,11 +246,27 @@ export const useAppStore = defineStore('app', () => {
       email: account.email,
       dob: payload.birth_date ?? '',
       heightCm: payload.height_cm,
-      activityLevel: activity,
+      activityLevel: payload.activity_level ?? profile.value.activityLevel,
       goal: payload.goal,
       calorieTarget: payload.calorie_target,
+      targetWeightKg: payload.target_weight_kg,
       timezone: payload.timezone,
     }
+  }
+
+  async function loadConversation() {
+    const list = await apiJson<{ data: { id: number }[] }>('/api/conversations')
+    let id = list.data[0]?.id
+    if (!id) {
+      const created = await apiJson<{ id: number }>('/api/conversations', { method: 'POST', body: JSON.stringify({}) })
+      id = created.id
+      messages.value = []
+      conversationId.value = id
+      return
+    }
+    const conversation = await apiJson<{ id: number; messages: ApiMessage[] }>(`/api/conversations/${id}`)
+    conversationId.value = conversation.id
+    messages.value = conversation.messages.map(toChatMessage)
   }
 
   async function loadAccount(account: AccountUser) {
@@ -305,6 +276,13 @@ export const useAppStore = defineStore('app', () => {
     ])
     applyProfile(account, payload)
     applySettings(settings)
+    if (!journalBooted) {
+      selectedDate.value = today.value
+      customTo.value = today.value
+      customFrom.value = addDays(today.value, -6)
+      journalBooted = true
+    }
+    await Promise.all([refreshJournal(), loadConversation()])
   }
 
   let sessionReady: Promise<void> | null = null
@@ -335,6 +313,7 @@ export const useAppStore = defineStore('app', () => {
       method: 'POST',
       body: JSON.stringify({ email, password, remember: true }),
     })
+    journalBooted = false
     await loadAccount(account)
     sessionStorage.removeItem(ONBOARDING_KEY)
     onboarded.value = true
@@ -353,6 +332,7 @@ export const useAppStore = defineStore('app', () => {
         password_confirmation: confirmation,
       }),
     })
+    journalBooted = false
     await loadAccount(account)
     sessionStorage.setItem(ONBOARDING_KEY, '1')
     onboarded.value = false
@@ -363,23 +343,13 @@ export const useAppStore = defineStore('app', () => {
     await ensureCsrf()
     const account = await apiJson<AccountUser>('/reset-password', {
       method: 'POST',
-      body: JSON.stringify({
-        email,
-        token,
-        password,
-        password_confirmation: confirmation,
-      }),
+      body: JSON.stringify({ email, token, password, password_confirmation: confirmation }),
     })
+    journalBooted = false
     await loadAccount(account)
     sessionStorage.removeItem(ONBOARDING_KEY)
     onboarded.value = true
     freshAccount.value = false
-  }
-
-  function syncTodayWeight(kg: number) {
-    const todayPoint = weights.value.find((point) => point.date === TODAY)
-    if (todayPoint) todayPoint.kg = kg
-    else weights.value.push({ id: uid('wt'), date: TODAY, kg, notes: '' })
   }
 
   function profileBody(next: Profile) {
@@ -389,6 +359,7 @@ export const useAppStore = defineStore('app', () => {
       activity_level: next.activityLevel,
       goal: next.goal,
       calorie_target: next.calorieTarget,
+      target_weight_kg: next.targetWeightKg,
       timezone: next.timezone,
     }
   }
@@ -404,13 +375,14 @@ export const useAppStore = defineStore('app', () => {
       body: JSON.stringify(profileBody(next)),
     })
     applyProfile(account, saved)
-    profile.value = {
-      ...profile.value,
-      weightKg: next.weightKg,
-      targetWeightKg: next.targetWeightKg,
-      units: next.units,
+    profile.value = { ...profile.value, units: next.units, weightKg: next.weightKg }
+    if (next.weightKg >= 30) {
+      await apiJson('/api/weights', {
+        method: 'POST',
+        body: JSON.stringify({ recorded_on: today.value, weight_kg: next.weightKg, note: null }),
+      })
     }
-    syncTodayWeight(next.weightKg)
+    await refreshJournal()
   }
 
   async function finishOnboarding(next: Profile) {
@@ -421,10 +393,19 @@ export const useAppStore = defineStore('app', () => {
       body: JSON.stringify({ units: next.units }),
     })
     applySettings(settings)
-    if (Object.keys(meals.value).length === 0) loadDemoJournal()
     sessionStorage.removeItem(ONBOARDING_KEY)
     onboarded.value = true
     notifySaved()
+  }
+
+  function clearJournal() {
+    meals.value = {}
+    activities.value = []
+    weights.value = []
+    summaries.value = {}
+    messages.value = []
+    conversationId.value = null
+    journalBooted = false
   }
 
   async function logout() {
@@ -436,17 +417,15 @@ export const useAppStore = defineStore('app', () => {
     }
     user.value = null
     onboarded.value = false
-    messages.value = []
-    profile.value = { ...profile.value, firstName: '', lastName: '', email: '' }
     freshAccount.value = false
+    profile.value = emptyProfile()
+    clearJournal()
   }
 
   async function saveProfile(next: Profile) {
     await persistProfile(next)
     notifySaved()
   }
-
-  let settingsToken = 0
 
   async function persistSettings(revert: () => void) {
     if (!user.value) return
@@ -516,311 +495,191 @@ export const useAppStore = defineStore('app', () => {
         body: JSON.stringify({ timezone: value }),
       })
       profile.value = { ...profile.value, timezone: saved.timezone }
+      if (selectedDate.value > today.value) selectedDate.value = today.value
+      await refreshJournal()
     } catch {
       profile.value = { ...profile.value, timezone: previous }
       toast.error(t('account.saveFailed'))
     }
   }
 
-  function upsertMeal(meal: Meal, previousDate?: string) {
-    const next = { ...meal, id: meal.id || uid('meal'), items: meal.items.map((item) => ({ ...item, id: item.id || uid('food'), nameEn: item.nameEn && item.nameEn !== item.name ? item.nameEn : undefined })) }
-    if (previousDate && previousDate !== next.date) {
-      meals.value[previousDate] = (meals.value[previousDate] ?? []).filter((item) => item.id !== next.id)
-    }
-    const list = [...(meals.value[next.date] ?? [])]
-    const index = list.findIndex((item) => item.id === next.id)
-    if (index >= 0) list.splice(index, 1, next)
-    else list.push(next)
-    meals.value[next.date] = list
-    notifyDemo()
+  async function upsertMeal(meal: Meal, previousDate?: string) {
+    await ensureCsrf()
+    const id = persistedId(meal.id)
+    const path = id ? `/api/meals/${id}` : '/api/meals'
+    await apiJson(path, { method: id ? 'PUT' : 'POST', body: JSON.stringify(mealPayload(meal)) })
+    if (previousDate && previousDate !== meal.date) selectedDate.value = meal.date
+    else if (meal.date !== selectedDate.value) selectedDate.value = meal.date
+    await refreshJournal()
+    toast.success(t('journal.savedTitle'), { description: t('journal.savedBody') })
   }
 
-  function deleteMeal(id: string, date: string) {
-    meals.value[date] = (meals.value[date] ?? []).filter((item) => item.id !== id)
-    notifyDemo()
+  async function deleteMeal(id: string) {
+    await ensureCsrf()
+    await apiJson(`/api/meals/${id}`, { method: 'DELETE' })
+    await refreshJournal()
+    toast.success(t('journal.savedTitle'), { description: t('journal.deletedBody') })
   }
 
-  function upsertActivity(activity: Activity) {
-    const next = { ...activity, id: activity.id || uid('act') }
-    const index = activities.value.findIndex((item) => item.id === next.id)
-    if (index >= 0) activities.value.splice(index, 1, next)
-    else activities.value.push(next)
-    notifyDemo()
+  async function upsertActivity(activity: Activity) {
+    await ensureCsrf()
+    const id = persistedId(activity.id)
+    const path = id ? `/api/activities/${id}` : '/api/activities'
+    await apiJson(path, { method: id ? 'PUT' : 'POST', body: JSON.stringify(activityPayload(activity)) })
+    if (activity.date !== selectedDate.value) selectedDate.value = activity.date
+    await refreshJournal()
+    toast.success(t('journal.savedTitle'), { description: t('journal.savedBody') })
   }
 
-  function deleteActivity(id: string) {
-    activities.value = activities.value.filter((item) => item.id !== id)
-    notifyDemo()
+  async function deleteActivity(id: string) {
+    await ensureCsrf()
+    await apiJson(`/api/activities/${id}`, { method: 'DELETE' })
+    await refreshJournal()
+    toast.success(t('journal.savedTitle'), { description: t('journal.deletedBody') })
   }
 
-  function upsertWeight(point: WeightPoint) {
-    const next = { ...point, id: point.id || uid('wt') }
-    const index = weights.value.findIndex((item) => item.id === next.id)
-    if (index >= 0) weights.value.splice(index, 1, next)
-    else weights.value.push(next)
-    profile.value = { ...profile.value, weightKg: next.kg }
-    notifyDemo()
+  async function upsertWeight(point: WeightPoint) {
+    await ensureCsrf()
+    const id = persistedId(point.id)
+    const path = id ? `/api/weights/${id}` : '/api/weights'
+    await apiJson(path, {
+      method: id ? 'PUT' : 'POST',
+      body: JSON.stringify({ recorded_on: point.date, weight_kg: point.kg, note: point.notes || null }),
+    })
+    await refreshJournal()
+    toast.success(t('journal.savedTitle'), { description: t('journal.savedBody') })
   }
 
-  function deleteWeight(id: string) {
-    weights.value = weights.value.filter((item) => item.id !== id)
-    notifyDemo()
+  async function deleteWeight(id: string) {
+    await ensureCsrf()
+    await apiJson(`/api/weights/${id}`, { method: 'DELETE' })
+    await refreshJournal()
+    toast.success(t('journal.savedTitle'), { description: t('journal.deletedBody') })
   }
 
-  function stamp(): string {
-    return new Date().toISOString()
-  }
-
-  function pushMessage(message: ChatMessage) {
-    messages.value.push(message)
-  }
-
-  function lastMealLabel(): { id: string; date: string; label: string } | null {
-    const list = mealsOn(selectedDate.value)
-    const meal = list[list.length - 1]
-    if (!meal) return null
-    return {
-      id: meal.id,
-      date: meal.date,
-      label: meal.items.map((item) => localizedName(item, locale.value)).join(', '),
-    }
-  }
-
-  function proposalFromIntent(text: string): { text: string; proposal?: Proposal; retryText?: string } {
-    const intent = interpret(text)
-    if (intent.type === 'unavailable') {
-      if (!unavailablePending) {
-        unavailablePending = true
-        return { text: t('chat.unavailable'), retryText: text }
-      }
-      unavailablePending = false
-      const recovered = interpret('La pranz am mancat 200 g piept de pui')
-      return {
-        text: t('chat.recovered'),
-        proposal: recovered.type === 'meal' ? mealProposal(recovered.meal, false) : undefined,
-      }
-    }
-    if (intent.type === 'not-found') return { text: t('chat.notFound', { query: intent.query }) }
-    if (intent.type === 'ambiguous') return { text: t('chat.ambiguous') }
-    if (intent.type === 'yesterday') {
-      const day = nutrition(YESTERDAY)
-      const names = mealsOn(YESTERDAY).flatMap((meal) => meal.items.map((item) => localizedName(item, locale.value)))
-      const summary = t('chat.yesterday', {
-        date: formatLongDate(YESTERDAY, locale.value),
-        kcal: formatKcal(day.intake, locale.value).replace(' kcal', ''),
-        target: String(profile.value.calorieTarget ?? 0),
-      })
-      const extra = names.length ? t('chat.yesterdayMeals', { meals: names.join(', ') }) : t('chat.yesterdayEmpty')
-      return { text: `${summary} ${extra}` }
-    }
-    if (intent.type === 'delete') {
-      const target = lastMealLabel()
-      if (!target) return { text: t('chat.nothingToDelete') }
-      const proposal: Proposal = {
-        id: uid('proposal'),
-        kind: 'delete-meal',
-        status: 'pending',
-        mealId: target.id,
-        date: target.date,
-        label: target.label,
-      }
-      return { text: t('chat.deleteAsk', { label: target.label }), proposal }
-    }
-    if (intent.type === 'weight') {
-      const proposal: Proposal = {
-        id: uid('proposal'),
-        kind: 'weight',
-        status: 'pending',
-        kg: intent.kg,
-        date: selectedDate.value,
-        notes: '',
-      }
-      return { text: t('chat.weightIntro'), proposal }
-    }
-    if (intent.type === 'activity') {
-      const proposal: Proposal = {
-        id: uid('proposal'),
-        kind: 'activity',
-        status: 'pending',
-        activity: {
-          date: selectedDate.value,
-          name: intent.name,
-          nameEn: intent.nameEn,
-          minutes: intent.minutes,
-          intensity: intent.intensity,
-          calories: intent.calories,
-          notes: '',
-        },
-      }
-      return { text: t('chat.activityIntro'), proposal }
-    }
-    return { text: t('chat.found'), proposal: mealProposal(intent.meal, intent.portionAssumption) }
-  }
-
-  function mealProposal(body: Omit<Meal, 'id' | 'date'>, portion: boolean): MealProposal {
-    return {
-      id: uid('proposal'),
-      kind: 'meal',
-      status: 'pending',
-      corrected: false,
-      assumptionsKey: portion ? 'chat.assumptionPortion' : 'chat.assumptionPrep',
-      uncertaintyKey: portion ? 'chat.uncertaintyPortion' : null,
-      sourcesKey: 'chat.sourceValue',
-      meal: {
-        id: uid('meal'),
-        date: selectedDate.value,
-        type: body.type,
-        time: body.time,
-        items: body.items.map((item) => ({ ...item, id: uid('food') })),
-      },
-    }
-  }
-
-  async function sendChat(text: string, thinkMs = 800) {
+  async function sendChat(text: string) {
     const trimmed = text.trim()
     if (!trimmed || chatThinking.value) return
-    pushMessage({ id: uid('msg'), role: 'user', text: trimmed, at: stamp() })
     chatThinking.value = true
-    await delay(thinkMs)
-    const reply = proposalFromIntent(trimmed)
-    pushMessage({
-      id: uid('msg'),
-      role: 'assistant',
-      text: reply.text,
-      at: stamp(),
-      proposal: reply.proposal,
-      retryText: reply.retryText,
-    })
-    chatThinking.value = false
+    try {
+      await ensureCsrf()
+      if (!conversationId.value) await loadConversation()
+      const reply = await apiJson<ChatReply>(`/api/conversations/${conversationId.value}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ content: trimmed }),
+      })
+      const assistant = toChatMessage(reply.assistant_message)
+      if (reply.proposal) assistant.proposal = toProposal(reply.proposal)
+      if (reply.retry) assistant.retryText = trimmed
+      messages.value.push(toChatMessage(reply.user_message), assistant)
+    } catch {
+      messages.value.push(
+        { id: uid('msg'), role: 'user', text: trimmed, at: new Date().toISOString() },
+        { id: uid('msg'), role: 'assistant', text: t('chat.unavailable'), at: new Date().toISOString(), retryText: trimmed },
+      )
+    } finally {
+      chatThinking.value = false
+    }
   }
 
   async function retryChat(text: string) {
-    unavailablePending = false
     await sendChat(text)
   }
 
-  function updateProposal(id: string, recipe: (proposal: Proposal) => Proposal) {
+  function replaceProposal(id: string, proposal: Proposal) {
     const message = messages.value.find((item) => item.proposal?.id === id)
-    if (!message?.proposal || message.proposal.status !== 'pending') return
-    message.proposal = recipe(message.proposal)
+    if (message) message.proposal = proposal
   }
 
-  function confirmProposal(id: string) {
-    const message = messages.value.find((item) => item.proposal?.id === id)
-    const proposal = message?.proposal
-    if (!proposal || proposal.status !== 'pending') return
-    if (proposal.kind === 'meal') {
-      upsertMeal(proposal.meal)
-      proposal.status = 'confirmed'
-      message.text = t('chat.saved')
-      return
-    }
-    if (proposal.kind === 'weight') {
-      upsertWeight({ id: uid('wt'), date: proposal.date, kg: proposal.kg, notes: proposal.notes })
-      proposal.status = 'confirmed'
-      message.text = t('chat.weightSaved')
-      return
-    }
-    if (proposal.kind === 'activity') {
-      upsertActivity({ ...proposal.activity, id: uid('act') })
-      proposal.status = 'confirmed'
-      message.text = t('chat.activitySaved')
-      return
-    }
-    deleteMeal(proposal.mealId, proposal.date)
-    proposal.status = 'confirmed'
-    message.text = t('chat.deleted')
-  }
-
-  function cancelProposal(id: string) {
-    const message = messages.value.find((item) => item.proposal?.id === id)
-    if (!message?.proposal || message.proposal.status !== 'pending') return
-    message.proposal.status = 'cancelled'
-    message.text = t('chat.cancelled')
-  }
-
-  function correctMealProposal(id: string, meal: Meal) {
-    updateProposal(id, (proposal) => {
-      if (proposal.kind !== 'meal') return proposal
-      return { ...proposal, corrected: true, meal, uncertaintyKey: 'chat.uncertaintyPortion' }
-    })
-    const message = messages.value.find((item) => item.proposal?.id === id)
-    if (message) message.text = t('chat.stillOpen')
-    notifyDemo()
-  }
-
-  function correctWeightProposal(id: string, kg: number, notes: string) {
-    updateProposal(id, (proposal) => (proposal.kind === 'weight' ? { ...proposal, kg, notes } : proposal))
-    const message = messages.value.find((item) => item.proposal?.id === id)
-    if (message) message.text = t('chat.stillOpen')
-  }
-
-  function correctActivityProposal(id: string, activity: ActivityProposal['activity']) {
-    updateProposal(id, (proposal) => (proposal.kind === 'activity' ? { ...proposal, activity } : proposal))
-    const message = messages.value.find((item) => item.proposal?.id === id)
-    if (message) message.text = t('chat.stillOpen')
-  }
-
-  function showExample(kind: ExampleKind) {
-    if (kind === 'empty') {
-      messages.value = []
+  async function confirmProposal(id: string) {
+    if (chatThinking.value) return
+    chatThinking.value = true
+    try {
+      await ensureCsrf()
+      const saved = await apiJson<{ proposal: ApiProposal; revision_id: number }>(`/api/proposals/${id}/confirm`, { method: 'POST' })
+      const message = messages.value.find((item) => item.proposal?.id === id)
+      if (message) {
+        message.proposal = toProposal(saved.proposal)
+        message.revisionId = String(saved.revision_id)
+        message.text = saved.proposal.kind === 'delete-meal'
+          ? t('chat.deleted')
+          : saved.proposal.kind === 'weight'
+            ? t('chat.weightSaved')
+            : saved.proposal.kind === 'activity'
+              ? t('chat.activitySaved')
+              : t('chat.saved')
+      }
+      await refreshJournal()
+      toast.success(t('journal.savedTitle'), { description: t('journal.savedBody') })
+    } catch {
+      toast.error(t('chat.actionFailed'))
+    } finally {
       chatThinking.value = false
-      return
     }
-    if (kind === 'processing') {
-      void sendChat('Adaugă micul dejun', 2200)
-      return
-    }
-    if (kind === 'meal') {
-      void sendChat('La prânz am mâncat 200 g piept de pui, 200 g orez cu legume și un măr')
-      return
-    }
-    if (kind === 'weight') {
-      void sendChat('Înregistrează greutatea 84,6')
-      return
-    }
-    if (kind === 'activity') {
-      void sendChat('Am făcut sport 35 minute')
-      return
-    }
-    if (kind === 'ambiguous') {
-      void sendChat('am mâncat ceva')
-      return
-    }
-    if (kind === 'missing') {
-      void sendChat('adaugă zorbix')
-      return
-    }
-    if (kind === 'down') {
-      unavailablePending = false
-      void sendChat('serviciu indisponibil')
-      return
-    }
-    if (kind === 'delete') {
-      void sendChat('șterge ultima masă')
-      return
-    }
-    if (kind === 'saved') {
-      pushMessage({ id: uid('msg'), role: 'assistant', text: t('chat.saved'), at: stamp() })
-      return
-    }
-    const sample = interpret('La pranz am mancat 200 g piept de pui')
-    const proposal = mealProposal(sample.type === 'meal' ? sample.meal : { type: 'lunch', time: '13:40', items: [] }, false)
-    proposal.corrected = true
-    pushMessage({
-      id: uid('msg'),
-      role: 'assistant',
-      text: t('chat.stillOpen'),
-      at: stamp(),
-      proposal,
-    })
   }
 
-  const pendingMeals = computed(() =>
-    messages.value
-      .map((message) => message.proposal)
-      .filter((proposal): proposal is MealProposal => proposal?.kind === 'meal' && proposal.status === 'pending'),
-  )
+  async function cancelProposal(id: string) {
+    try {
+      await ensureCsrf()
+      const saved = await apiJson<ApiProposal>(`/api/proposals/${id}/cancel`, { method: 'POST' })
+      const message = messages.value.find((item) => item.proposal?.id === id)
+      if (message) {
+        message.proposal = toProposal(saved)
+        message.text = t('chat.cancelled')
+      }
+    } catch {
+      toast.error(t('chat.actionFailed'))
+    }
+  }
+
+  async function patchProposal(id: string, next: Proposal) {
+    await ensureCsrf()
+    const saved = await apiJson<ApiProposal>(`/api/proposals/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(proposalPatch(next)),
+    })
+    replaceProposal(id, toProposal(saved))
+    const message = messages.value.find((item) => item.proposal?.id === id)
+    if (message) message.text = t('chat.stillOpen')
+  }
+
+  async function correctMealProposal(id: string, meal: Meal) {
+    const current = messages.value.find((item) => item.proposal?.id === id)?.proposal
+    if (!current || current.kind !== 'meal') return
+    await patchProposal(id, { ...current, corrected: true, meal })
+  }
+
+  async function correctWeightProposal(id: string, kg: number, notes: string) {
+    const current = messages.value.find((item) => item.proposal?.id === id)?.proposal
+    if (!current || current.kind !== 'weight') return
+    await patchProposal(id, { ...current, kg, notes })
+  }
+
+  async function correctActivityProposal(id: string, activity: Omit<Activity, 'id'>) {
+    const current = messages.value.find((item) => item.proposal?.id === id)?.proposal
+    if (!current || current.kind !== 'activity') return
+    await patchProposal(id, { ...current, activity })
+  }
+
+  async function undoRevision(revisionId: string) {
+    try {
+      await ensureCsrf()
+      await apiJson(`/api/journal-revisions/${revisionId}/undo`, { method: 'POST' })
+      const message = messages.value.find((item) => item.revisionId === revisionId)
+      if (message) {
+        message.revisionId = undefined
+        message.text = t('chat.undone')
+      }
+      await refreshJournal()
+      toast.success(t('chat.undone'))
+    } catch {
+      toast.error(t('chat.actionFailed'))
+    }
+  }
+
+  watch([period, customFrom, customTo, weightRange], () => {
+    if (user.value) void refreshJournal()
+  })
 
   return {
     user,
@@ -845,14 +704,13 @@ export const useAppStore = defineStore('app', () => {
     customTo,
     weightRange,
     earliest,
-    today: TODAY,
+    today,
     todayNutrition,
     exerciseCalories,
     latestWeight,
     mealsOn,
     nutrition,
     setDate,
-    showError,
     retryView,
     login,
     register,
@@ -879,9 +737,7 @@ export const useAppStore = defineStore('app', () => {
     correctMealProposal,
     correctWeightProposal,
     correctActivityProposal,
-    showExample,
+    undoRevision,
     pendingMeals,
-    mealCalories,
-    notifyDemo,
   }
 })

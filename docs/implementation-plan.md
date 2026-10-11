@@ -1,6 +1,6 @@
 # Plan de implementare
 
-Etapa 0 este gata: monorepo, Sanctum configurat pentru SPA, MySQL prin Docker Compose, shell Vue și documentația. Register, login, resetarea parolei, profilul și setările sunt legate de API. Jurnalul, USDA și chatul nu sunt încă persistate.
+Etapa 0 este gata: monorepo, Sanctum configurat pentru SPA, MySQL prin Docker Compose, shell Vue și documentația. Contul, profilul, setările, jurnalul și chatul sunt legate de API. USDA și OpenAI sunt apelate doar de server. Modelul de chat este `gpt-5.4-mini`. Scrierile din chat trec printr-o propunere confirmată de utilizator.
 
 Fiecare etapă următoare se livrează doar la cererea utilizatorului, cu teste pentru izolare și fără să lărgească scope-ul etapei. Regulile din [AGENTS.md](AGENTS.md) se aplică la toate etapele. Interfața urmează [UI.md](UI.md).
 
@@ -70,11 +70,11 @@ Făcut.
 ## Etapa 9 — agentul de chat
 
 - Tabelele `conversations`, `messages`, `agent_actions`.
-- Client Responses API în backend. Allowlist-ul de unelte din arhitectură, fără unealtă SQL.
-- Aceleași servicii ca la etapele 3–7. Agentul nu primește un al doilea drum de scriere.
-- `POST /api/conversations/{conversation}/messages` execută uneltele, salvează auditul și întoarce mesajul asistentului.
-- UI de chat care arată și acțiunile reușite.
-- Teste: unealtă necunoscută respinsă; `log_weight` scrie doar la utilizatorul sesiunii; cheia OpenAI nu apare în răspuns.
+- Client Responses API în backend. Allowlist-ul de unelte din arhitectură, fără unealtă SQL și fără unelte de scriere.
+- Aceleași servicii ca la etapele 3–7. Agentul pregătește propuneri; confirmarea utilizatorului scrie jurnalul.
+- `POST /api/conversations/{conversation}/messages` execută uneltele de previzualizare, salvează auditul și întoarce mesajul asistentului.
+- UI de chat care arată estimarea, confirmarea și anularea ultimei modificări.
+- Teste: unealtă necunoscută respinsă; previzualizarea nu inserează masa; confirmarea și anularea rămân la utilizatorul sesiunii; cheile nu apar în răspuns.
 
 ## În afara acestui plan
 

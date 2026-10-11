@@ -3,7 +3,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { useI18n } from '@/composables/useI18n'
-import { mealCalories } from '@/fixtures/demo'
+import { mealCalories } from '@/lib/meals'
 import { formatKcal, formatLongDate, formatNumber, localizedName } from '@/lib/format'
 import { useAppStore } from '@/stores/app'
 import type { Proposal } from '@/types/domain'
@@ -54,9 +54,9 @@ function macro(value: number | null) {
           <span>{{ t('chat.total') }}</span>
           <span class="text-primary">{{ formatKcal(mealCalories(proposal.meal), app.locale) }}</span>
         </p>
-        <p class="text-sm text-muted-foreground"><span class="font-medium text-foreground">{{ t('chat.assumptions') }}:</span> {{ t(proposal.assumptionsKey) }}</p>
-        <p v-if="proposal.uncertaintyKey" class="text-sm"><span class="font-medium">{{ t('chat.uncertainty') }}:</span> {{ t(proposal.uncertaintyKey) }}</p>
-        <p class="text-sm text-muted-foreground"><span class="font-medium text-foreground">{{ t('chat.sources') }}:</span> {{ t(proposal.sourcesKey) }}</p>
+        <p v-if="proposal.assumptions" class="text-sm text-muted-foreground"><span class="font-medium text-foreground">{{ t('chat.assumptions') }}:</span> {{ proposal.assumptions }}</p>
+        <p v-if="proposal.uncertainty" class="text-sm"><span class="font-medium">{{ t('chat.uncertainty') }}:</span> {{ proposal.uncertainty }}</p>
+        <p class="text-sm text-muted-foreground"><span class="font-medium text-foreground">{{ t('chat.sources') }}:</span> {{ proposal.source === 'manual' ? t('chat.sourceManual') : proposal.source }}</p>
       </template>
       <template v-else-if="proposal.kind === 'weight'">
         <p class="text-2xl font-semibold">{{ proposal.kg }} kg</p>
@@ -72,9 +72,9 @@ function macro(value: number | null) {
       </template>
     </CardContent>
     <CardFooter v-if="proposal.status === 'pending'" class="grid gap-2 sm:grid-cols-3">
-      <Button type="button" class="h-11 hover:bg-primary-hover" @click="emit('confirm')">{{ t('chat.confirm') }}</Button>
-      <Button v-if="proposal.kind !== 'delete-meal'" type="button" variant="outline" class="h-11" @click="emit('correct')">{{ t('chat.correct') }}</Button>
-      <Button type="button" variant="ghost" class="h-11" @click="emit('cancel')">{{ t('chat.cancel') }}</Button>
+      <Button type="button" class="h-11 hover:bg-primary-hover" :disabled="app.chatThinking" @click="emit('confirm')">{{ t('chat.confirm') }}</Button>
+      <Button v-if="proposal.kind !== 'delete-meal'" type="button" variant="outline" class="h-11" :disabled="app.chatThinking" @click="emit('correct')">{{ t('chat.correct') }}</Button>
+      <Button type="button" variant="ghost" class="h-11" :disabled="app.chatThinking" @click="emit('cancel')">{{ t('chat.cancel') }}</Button>
     </CardFooter>
   </Card>
 </template>

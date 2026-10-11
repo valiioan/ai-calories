@@ -9,7 +9,6 @@ import ConfirmDialog from '@/components/layout/ConfirmDialog.vue'
 import FormField from '@/components/forms/FormField.vue'
 import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/composables/useI18n'
-import { appName } from '@/lib/appName'
 import { useAppStore } from '@/stores/app'
 import type { Appearance, Units } from '@/types/domain'
 import { ref } from 'vue'
@@ -37,23 +36,6 @@ async function saveGoals() {
   } finally {
     saving.value = false
   }
-}
-
-function exportData() {
-  const blob = new Blob([JSON.stringify({
-    note: `${appName.value} demo export. Not from a server.`,
-    profile: app.profile,
-    meals: app.meals,
-    activities: app.activities,
-    weights: app.weights,
-  }, null, 2)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = 'calorai-demo.json'
-  link.click()
-  URL.revokeObjectURL(url)
-  toast.success(t('demo.savedTitle'), { description: t('settings.exportBody') })
 }
 
 async function logout() {
@@ -152,16 +134,6 @@ function setTimezone(value: unknown) {
     <Card>
       <CardHeader><CardTitle>{{ t('settings.privacy') }}</CardTitle></CardHeader>
       <CardContent><p class="text-sm text-muted-foreground">{{ t('settings.privacyBody') }}</p></CardContent>
-    </Card>
-
-    <Card>
-      <CardHeader>
-        <CardTitle>{{ t('settings.export') }}</CardTitle>
-        <CardDescription>{{ t('settings.exportBody') }}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Button type="button" variant="outline" class="h-11" @click="exportData">{{ t('settings.exportAction') }}</Button>
-      </CardContent>
     </Card>
 
     <Card>

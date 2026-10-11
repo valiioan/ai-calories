@@ -8,6 +8,7 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -41,6 +42,41 @@ class User extends Authenticatable
     public function settings(): HasOne
     {
         return $this->hasOne(UserSetting::class);
+    }
+
+    public function meals(): HasMany
+    {
+        return $this->hasMany(Meal::class);
+    }
+
+    public function activities(): HasMany
+    {
+        return $this->hasMany(ActivityEntry::class);
+    }
+
+    public function weights(): HasMany
+    {
+        return $this->hasMany(WeightEntry::class);
+    }
+
+    public function conversations(): HasMany
+    {
+        return $this->hasMany(Conversation::class);
+    }
+
+    public function proposals(): HasMany
+    {
+        return $this->hasMany(Proposal::class);
+    }
+
+    public function revisions(): HasMany
+    {
+        return $this->hasMany(JournalRevision::class);
+    }
+
+    public function agentActions(): HasMany
+    {
+        return $this->hasMany(AgentAction::class);
     }
 
     public function ensureProfile(): Profile

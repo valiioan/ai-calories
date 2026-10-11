@@ -4,7 +4,6 @@ import { RouterView, useRoute } from 'vue-router'
 import { Sparkles } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import BottomNav from '@/components/layout/BottomNav.vue'
-import DemoBanner from '@/components/layout/DemoBanner.vue'
 import MobileHeader from '@/components/layout/MobileHeader.vue'
 import PageState from '@/components/layout/PageState.vue'
 import SideNav from '@/components/layout/SideNav.vue'
@@ -36,7 +35,6 @@ const frame = computed(() => cn(
     <SideNav />
     <div :class="frame">
       <MobileHeader class="md:hidden" />
-      <DemoBanner />
       <main id="continut" class="mx-auto w-full max-w-5xl px-4 pt-2 pb-28 md:px-6 md:pt-6 md:pb-10">
         <PageState>
           <RouterView />

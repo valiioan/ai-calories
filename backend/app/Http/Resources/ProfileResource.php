@@ -27,6 +27,7 @@ class ProfileResource extends JsonResource
             'protein_target_g' => $this->decimal($this->protein_target_g),
             'carbohydrate_target_g' => $this->decimal($this->carbohydrate_target_g),
             'fat_target_g' => $this->decimal($this->fat_target_g),
+            'target_weight_kg' => $this->decimal($this->target_weight_kg),
             'timezone' => $this->timezone,
         ];
     }

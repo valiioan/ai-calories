@@ -1,4 +1,12 @@
-export const TODAY = '2026-10-10'
+export function todayIn(timeZone = 'Europe/Bucharest'): string {
+  const formatted = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date())
+  return formatted.slice(0, 10)
+}
 
 export function toIso(date: Date): string {
   const y = date.getFullYear()

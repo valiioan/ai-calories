@@ -219,21 +219,15 @@ Conversația cu AI are două stări în plus.
 - Cerere ambiguă: textul nu ajunge pentru o estimare. Se cere o clarificare scurtă. Nu se inventează alimente și nu se arată „Confirmă” ca și cum estimarea ar fi completă.
 - Acțiune eșuată: salvarea sau acțiunea cerută nu a reușit. Se spune ce a eșuat și se poate relua. Masa nu se tratează ca salvată.
 
-Datele de demonstrație sunt marcate explicit ca atare, ca să nu fie confundate cu jurnalul utilizatorului.
+## Interacțiuni
 
-## Interacțiuni în faza de interfață
-
-Cât se construiește interfața, ecranele merg cu date de demonstrație. Nu se fac cereri către API. Un buton sau un element de navigație are un efect vizibil în prototip, nu este doar decor.
+Jurnalul, chatul, activitățile, greutatea și rapoartele citesc și scriu API-ul. Un cont nou pornește cu jurnalul gol. O zi fără înregistrări arată zero, nu date generate.
 
 - Navigația schimbă pagina activă și starea activă din bară.
-- Schimbarea datei schimbă datele de demonstrație afișate.
-- Sertarele și dialogurile se deschid și se închid.
-- Formularele acceptă text și arată eroarea de validare.
-- În chat se poate scrie și trimite. Răspunsul AI este un răspuns de demonstrație, stabil pentru același text.
-- „Confirmă” actualizează doar starea locală de demonstrație.
-- Graficele se schimbă când se schimbă filtrele de demonstrație.
-
-Confirmarea de reușită din această fază spune că modificarea rămâne în datele de demonstrație. Nu se lasă impresia că ceva a fost salvat pe server.
+- Schimbarea datei reîncarcă jurnalul acelei zile.
+- „Confirmă” salvează propunerea pe server. Până atunci masa nu este în jurnal.
+- Ultima salvare din chat poate fi anulată.
+- Graficele folosesc rezumatul zilelor încărcate.
 
 ## Accesibilitate
 

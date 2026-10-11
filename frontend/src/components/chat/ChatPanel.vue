@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { ArrowLeft, ArrowUp, EllipsisVertical, Maximize2, Sparkles, X } from '@lucide/vue'
+import { ArrowLeft, ArrowUp, Maximize2, Sparkles, X } from '@lucide/vue'
 import { useRouter } from 'vue-router'
 import { Button } from '@/components/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
@@ -16,7 +15,7 @@ import { useI18n } from '@/composables/useI18n'
 import { useMediaQuery } from '@/composables/useMediaQuery'
 import { formatTime } from '@/lib/format'
 import { useAppStore } from '@/stores/app'
-import type { Activity, ExampleKind, Meal } from '@/types/domain'
+import type { Activity, Meal } from '@/types/domain'
 
 const props = defineProps<{ layout: 'page' | 'dock' }>()
 const app = useAppStore()
@@ -43,20 +42,6 @@ const mealOpen = computed({
     if (!value) editingMeal.value = null
   },
 })
-
-const examples: { kind: ExampleKind; label: 'chat.exampleEmpty' | 'chat.exampleProcessing' | 'chat.exampleMeal' | 'chat.exampleSaved' | 'chat.exampleCorrected' | 'chat.exampleDelete' | 'chat.exampleWeight' | 'chat.exampleActivity' | 'chat.exampleAmbiguous' | 'chat.exampleMissing' | 'chat.exampleDown' }[] = [
-  { kind: 'empty', label: 'chat.exampleEmpty' },
-  { kind: 'processing', label: 'chat.exampleProcessing' },
-  { kind: 'meal', label: 'chat.exampleMeal' },
-  { kind: 'saved', label: 'chat.exampleSaved' },
-  { kind: 'corrected', label: 'chat.exampleCorrected' },
-  { kind: 'delete', label: 'chat.exampleDelete' },
-  { kind: 'weight', label: 'chat.exampleWeight' },
-  { kind: 'activity', label: 'chat.exampleActivity' },
-  { kind: 'ambiguous', label: 'chat.exampleAmbiguous' },
-  { kind: 'missing', label: 'chat.exampleMissing' },
-  { kind: 'down', label: 'chat.exampleDown' },
-]
 
 async function scrollDown() {
   await nextTick()
@@ -128,16 +113,6 @@ function saveActivity() {
         <h1 class="text-sm font-semibold leading-tight">{{ t('chat.title') }}</h1>
         <p class="text-xs text-muted-foreground">{{ t('chat.subtitle') }}</p>
       </div>
-      <DropdownMenu>
-        <DropdownMenuTrigger class="grid size-11 shrink-0 place-items-center rounded-lg hover:bg-muted" :aria-label="t('chat.examples')">
-          <EllipsisVertical />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" class="max-h-80 overflow-y-auto">
-          <DropdownMenuItem v-for="example in examples" :key="example.kind" class="min-h-11" @click="app.showExample(example.kind)">
-            {{ t(example.label) }}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
       <Button v-if="props.layout === 'dock'" type="button" variant="ghost" size="icon" class="size-11" :aria-label="t('chat.expand')" @click="router.push({ name: 'chat' })">
         <Maximize2 />
       </Button>
@@ -164,6 +139,9 @@ function saveActivity() {
           <p class="whitespace-pre-wrap break-words">{{ message.text }}</p>
           <time class="mt-1 block text-xs opacity-80" :datetime="message.at">{{ formatTime(message.at, app.locale) }}</time>
         </div>
+        <Button v-if="message.revisionId" type="button" variant="outline" class="h-11" @click="app.undoRevision(message.revisionId)">
+          {{ t('chat.undo') }}
+        </Button>
         <ProposalCard
           v-if="message.proposal && message.proposal.status !== 'cancelled'"
           class="w-full"

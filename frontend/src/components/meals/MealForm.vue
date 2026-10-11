@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import FormField from '@/components/forms/FormField.vue'
 import { useI18n } from '@/composables/useI18n'
-import { MEAL_TYPES } from '@/fixtures/demo'
+import { MEAL_TYPES } from '@/lib/meals'
 import { uid } from '@/lib/id'
 import { useAppStore } from '@/stores/app'
 import type { FoodItem, FoodUnit, Meal, MealType } from '@/types/domain'
@@ -24,6 +24,8 @@ type DraftItem = {
   protein: string
   carbs: string
   fat: string
+  foodId: number | null
+  source: 'usda' | 'manual'
 }
 
 const draft = reactive({
@@ -36,7 +38,7 @@ const draft = reactive({
 const errors = reactive<Record<string, string>>({})
 
 function blankItem(): DraftItem {
-  return { id: uid('food'), name: '', quantity: '', unit: 'g', calories: '', protein: '', carbs: '', fat: '' }
+  return { id: uid('food'), name: '', quantity: '', unit: 'g', calories: '', protein: '', carbs: '', fat: '', foodId: null, source: 'manual' }
 }
 
 function load(meal: Meal) {
@@ -53,6 +55,8 @@ function load(meal: Meal) {
     protein: item.protein == null ? '' : String(item.protein),
     carbs: item.carbs == null ? '' : String(item.carbs),
     fat: item.fat == null ? '' : String(item.fat),
+    foodId: item.foodId ?? null,
+    source: item.source ?? 'manual',
   }))
   if (draft.items.length === 0) draft.items.push(blankItem())
   for (const key of Object.keys(errors)) delete errors[key]
@@ -77,7 +81,7 @@ function save() {
     const quantity = Number(item.quantity.replace(',', '.'))
     if (!Number.isFinite(quantity) || quantity <= 0) errors[`quantity-${index}`] = t('validation.quantity')
     const calories = Number(item.calories.replace(',', '.'))
-    if (!Number.isFinite(calories) || calories < 0 || calories > 5000) errors[`calories-${index}`] = t('validation.calories')
+    if (item.source !== 'usda' && (!Number.isFinite(calories) || calories < 0 || calories > 5000)) errors[`calories-${index}`] = t('validation.calories')
     optionalNumber(item.protein, `protein-${index}`)
     optionalNumber(item.carbs, `carbs-${index}`)
     optionalNumber(item.fat, `fat-${index}`)
@@ -90,10 +94,12 @@ function save() {
     name: item.name.trim(),
     quantity: Number(item.quantity.replace(',', '.')),
     unit: item.unit,
-    calories: Number(item.calories.replace(',', '.')),
+    calories: item.source === 'usda' ? 0 : Number(item.calories.replace(',', '.')),
     protein: item.protein.trim() ? Number(item.protein.replace(',', '.')) : null,
     carbs: item.carbs.trim() ? Number(item.carbs.replace(',', '.')) : null,
     fat: item.fat.trim() ? Number(item.fat.replace(',', '.')) : null,
+    foodId: item.foodId,
+    source: item.source,
   }))
   emit('save', { id: draft.id, date: draft.date, type: draft.type, time: draft.time, items })
 }
@@ -142,7 +148,7 @@ function save() {
         </FormField>
       </div>
       <FormField :id="`food-kcal-${index}`" :label="t('meal.calories')" :error="errors[`calories-${index}`]">
-        <Input :id="`food-kcal-${index}`" v-model="item.calories" inputmode="decimal" class="h-11" :aria-invalid="!!errors[`calories-${index}`]" />
+        <Input :id="`food-kcal-${index}`" v-model="item.calories" inputmode="decimal" class="h-11" :readonly="item.source === 'usda'" :aria-invalid="!!errors[`calories-${index}`]" />
       </FormField>
       <div class="grid gap-3 sm:grid-cols-3">
         <FormField :id="`food-p-${index}`" :label="t('meal.protein')" :optional="t('common.optional')" :error="errors[`protein-${index}`]">

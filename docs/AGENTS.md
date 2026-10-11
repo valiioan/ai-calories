@@ -6,9 +6,9 @@ Sursa de adevăr pentru interfață este [UI.md](UI.md). Citește și [architect
 
 ## Faza curentă
 
-Contul, profilul și setările se salvează prin API-ul Laravel, cu sesiune Sanctum în cookie HttpOnly, 30 de zile. Jurnalul, chatul, activitățile, greutatea și rapoartele rămân date locale până la o cerere explicită. Nu implementa USDA, OpenAI sau celelalte tabele decât dacă utilizatorul o cere.
+Contul, profilul, setările, jurnalul, activitățile, greutatea, rapoartele și chatul se salvează prin API-ul Laravel, cu sesiune Sanctum în cookie HttpOnly, 30 de zile. OpenAI și USDA sunt apelate doar de server. Modelul implicit este `gpt-5.4-mini`, cu `reasoning.effort` low.
 
-Folosește date de demonstrație pentru ecranele care nu sunt încă legate de API. O acțiune din acele ecrane nu se prezintă ca salvată pe server.
+Jurnalul unui cont nou este gol. Nu se folosesc date de demonstrație și nu se prezintă o salvare ca locală.
 
 ## Stack obligatoriu
 

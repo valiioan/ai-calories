@@ -9,7 +9,7 @@ import MealCard from '@/components/meals/MealCard.vue'
 import MealDetails from '@/components/meals/MealDetails.vue'
 import MealForm from '@/components/meals/MealForm.vue'
 import { useI18n } from '@/composables/useI18n'
-import { blankMeal, MEAL_TYPES } from '@/fixtures/demo'
+import { blankMeal, MEAL_TYPES } from '@/lib/meals'
 import { formatLongDate } from '@/lib/format'
 import { useAppStore } from '@/stores/app'
 import type { Meal } from '@/types/domain'
@@ -61,7 +61,7 @@ function save(meal: Meal) {
 
 function confirmDelete() {
   if (!deleting.value) return
-  app.deleteMeal(deleting.value.id, deleting.value.date)
+  app.deleteMeal(deleting.value.id)
   deleting.value = null
   detailsOpen.value = false
 }
@@ -93,7 +93,7 @@ function confirmDelete() {
     <ResponsivePanel v-model:open="detailsOpen" :title="details ? t(`meal.${details.type}`) : t('meal.details')" :description="details ? `${formatLongDate(details.date, app.locale)} · ${details.time}` : t('meal.details')">
       <MealDetails v-if="details" :meal="details" @edit="openEdit(details)" @remove="deleting = details" />
     </ResponsivePanel>
-    <ResponsivePanel v-model:open="editOpen" :title="editing?.id ? t('meal.edit') : t('meal.add')" :description="t('demo.savedBody')">
+    <ResponsivePanel v-model:open="editOpen" :title="editing?.id ? t('meal.edit') : t('meal.add')" :description="t('meal.formBody')">
       <MealForm v-if="editing" :meal="editing" @save="save" @cancel="editOpen = false" />
     </ResponsivePanel>
     <ConfirmDialog

@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'protein_target_g',
     'carbohydrate_target_g',
     'fat_target_g',
+    'target_weight_kg',
     'timezone',
 ])]
 class Profile extends Model
@@ -29,6 +30,7 @@ class Profile extends Model
             'protein_target_g' => 'decimal:1',
             'carbohydrate_target_g' => 'decimal:1',
             'fat_target_g' => 'decimal:1',
+            'target_weight_kg' => 'decimal:2',
         ];
     }
 

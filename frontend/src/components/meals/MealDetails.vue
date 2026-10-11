@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/composables/useI18n'
-import { mealCalories, sumMacro } from '@/fixtures/demo'
+import { mealCalories, sumMacro } from '@/lib/meals'
 import { formatKcal, formatNumber, localizedName } from '@/lib/format'
 import { useAppStore } from '@/stores/app'
 import type { Meal } from '@/types/domain'

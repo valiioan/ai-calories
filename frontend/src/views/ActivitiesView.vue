@@ -9,7 +9,6 @@ import DayNavigator from '@/components/layout/DayNavigator.vue'
 import ResponsivePanel from '@/components/layout/ResponsivePanel.vue'
 import { useI18n } from '@/composables/useI18n'
 import { formatKcal, localizedName } from '@/lib/format'
-import { uid } from '@/lib/id'
 import { useAppStore } from '@/stores/app'
 import type { Activity } from '@/types/domain'
 
@@ -46,8 +45,8 @@ function edit(activity: Activity) {
   open.value = true
 }
 
-function save(activity: Activity) {
-  app.upsertActivity({ ...activity, id: activity.id || uid('act') })
+  function save(activity: Activity) {
+  app.upsertActivity(activity)
   open.value = false
 }
 </script>

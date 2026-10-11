@@ -13,7 +13,7 @@ const { t } = useI18n()
         <h2 class="text-3xl font-semibold">{{ t('auth.panelTitle') }}</h2>
         <p>{{ t('auth.panelBody') }}</p>
       </div>
-      <p class="text-sm">{{ t('demo.auth') }}</p>
+      <p class="text-sm">{{ t('auth.demoHint') }}</p>
     </section>
     <section class="flex min-h-svh flex-col px-4 py-6 sm:px-8">
       <LogoMark class="lg:hidden" />

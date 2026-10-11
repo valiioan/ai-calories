@@ -23,6 +23,7 @@ class UpdateProfileRequest extends FormRequest
             'protein_target_g',
             'carbohydrate_target_g',
             'fat_target_g',
+            'target_weight_kg',
         ];
         $merged = [];
 
@@ -52,6 +53,7 @@ class UpdateProfileRequest extends FormRequest
             'protein_target_g' => ['sometimes', 'nullable', 'numeric', 'between:0,2000'],
             'carbohydrate_target_g' => ['sometimes', 'nullable', 'numeric', 'between:0,2000'],
             'fat_target_g' => ['sometimes', 'nullable', 'numeric', 'between:0,2000'],
+            'target_weight_kg' => ['sometimes', 'nullable', 'numeric', 'between:30,300'],
             'timezone' => ['sometimes', 'required', 'timezone'],
         ];
     }
